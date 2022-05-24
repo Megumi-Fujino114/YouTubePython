@@ -7,10 +7,10 @@ search_num = 50
 
 # チャンネル開設日の期間指定
 # 期間開始日(yyyy-mm-dd の形式で指定)
-range_start = "2022-01-01"
+range_start = "2021-04-01"
 
 # 期間終了日(yyyy-mm-dd の形式で指定)
-range_end = "2022-04-01"
+range_end = "2022-06-01"
 
 ##### ユーザ指定範囲 ↑ここまで↑ #####
 
@@ -49,35 +49,44 @@ def FindURL(string):
 ### Youtubeからの情報取得　###
 youtube = build("youtube","v3",developerKey=api_key)
 
-# search()リクエスト送信　#
-request_s = youtube.search().list(
-    part = "snippet",
-    type = "channel",
-    regionCode = "JP",
-    q = search_word,
-    publishedBefore = range_end+"T00:00:00Z",  # 指定日時より前に登録されたchを検索
-    publishedAfter = range_start+"T00:00:00Z", # 指定日時より後に登録されたchを検索
-    maxResults = search_num)
-
-# search()リクエストの結果を取得
-response_s = request_s.execute()
-
-# search()リクエストの結果から channelId を抽出　→ リストに代入
 channel_ID_list = []
-for i in range(len(response_s['items'])):
-    channel_ID = response_s['items'][i]['snippet']['channelId']
-    channel_ID_list.append(channel_ID)
+pageToken=''
+
+while (pageToken != None and len(channel_ID_list) < 500):
+    # search()リクエスト送信　#
+    request_s = youtube.search().list(
+        part = "snippet",
+        type = "channel",
+        regionCode = "JP",
+        q = search_word,
+        publishedBefore = range_end+"T00:00:00Z",  # 指定日時より前に登録されたchを検索
+        publishedAfter = range_start+"T00:00:00Z", # 指定日時より後に登録されたchを検索
+        maxResults = search_num,
+        pageToken = pageToken)
+
+    # search()リクエストの結果を取得
+    response_s = request_s.execute()
+    # search()リクエストの結果から channelId を抽出　→ リストに代入
+    for item in response_s.get("items", []):
+        if item["id"]["kind"] != "youtube#channel":
+            continue
+        channel_ID_list.append([item["id"]["channelId"]])
+
+        if "nextPageToken" in response_s:
+            pageToken = response_s["nextPageToken"]
+        else:
+            pageToken = None
+    
 
 # csvファイルのヘッダと、検索結果格納用リスト
-csv_header = [["channelId", "subscriberCount", "viewCount", "publishedAt", "Twitter", "Instagram", "Facebook", "TikTok", "LINE"]]
+csv_header = [["channelId", "subscriberCount", "viewCount", "publishedAt", "Twitter", "Instagram", "Facebook", "TikTok", "LINE", "Description"]]
 search_result = []
 
 ### 取得した channelId を使って、1件ずつ channels() リクエストを送信 ###
 for channelID in channel_ID_list:
     request_c = youtube.channels().list(
         part = "snippet, contentDetails, statistics",
-        id = channelID
-    )
+        id = channelID)
 
     # channels()リクエストの結果を取得
     response_c = request_c.execute()
@@ -87,7 +96,7 @@ for channelID in channel_ID_list:
         json.dump(response_c, f, ensure_ascii=False, indent=2)
 
     # csvファイルに保存する情報をリストに格納
-    tmp = ["-", "-", "-", "-", "-", "-", "-", "-", "-"]
+    tmp = ["-", "-", "-", "-", "-", "-", "-", "-", "-", "-"]
     tmp[0] = response_c["items"][0]["id"]
     if response_c["items"][0]["statistics"]["hiddenSubscriberCount"] == False:
         tmp[1] = response_c["items"][0]["statistics"]["subscriberCount"]
@@ -112,16 +121,16 @@ for channelID in channel_ID_list:
             tmp[7] = url
         elif "line" in url:
             tmp[8] = url
+    tmp[9] = desc
 
     # チャンネルIDの検索結果から抽出した値をリストに格納
     search_result.append(tmp)
-
 
 # 保存するファイルがあるかチェック
 is_file = os.path.isfile(cfile)
 
 # 抽出した結果をcsvファイルに保存
-with open(cfile, "a", encoding="utf-8", newline="") as f:
+with open(cfile, "a", encoding="sjis", newline="", errors='ignore') as f:
     w = csv.writer(f)
 
     # ヘッダ行を記入するか判定
